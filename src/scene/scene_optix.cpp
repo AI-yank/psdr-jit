@@ -64,8 +64,8 @@ const char *miss_and_closesthit_ptx = R"(
 
     mov.b32     %uu0, %f1;
     mov.b32     %uu1, %f2;
-    call _optix_set_payload, (%r0, %rr6); // shape id
-    call _optix_set_payload, (%r1, %r3); // triangle id
+    call _optix_set_payload, (%r0, %rr6); // global triangle id
+    call _optix_set_payload, (%r1, %r3); // shape id
     call _optix_set_payload, (%u0, %uu0); // u
     call _optix_set_payload, (%u1, %uu1); // v
     ret;
@@ -358,6 +358,7 @@ void Scene_OptiX::configure(const std::vector<Mesh *> &meshes) {
         m_accel->d_gas = d_gas_compact;
     }
 
+    m_accel->handle = dr::opaque<UInt64>(m_accel->gas_handle);
     jit_free(d_compacted_size);
 
 }
@@ -371,8 +372,7 @@ bool Scene_OptiX::is_ready() const {
 
 template <bool ad>
 Intersection_OptiX Scene_OptiX::ray_intersect(const Ray<ad> &ray, Mask<ad> &active) const {
-    drjit::sync_thread();
-    const int m = static_cast<int>(slices<Vector3f<ad>>(ray.o));
+    PSDR_ASSERT(slices(ray.o) > 0);
 
     active &= ~drjit::isnan(ray.o.x());
     active &= ~drjit::isnan(ray.o.y());
@@ -382,7 +382,6 @@ Intersection_OptiX Scene_OptiX::ray_intersect(const Ray<ad> &ray, Mask<ad> &acti
     active &= ~drjit::isnan(ray.d.z());
 
     Intersection_OptiX m_its;
-    m_its.reserve(m);
     FloatC ox,oy,oz,dx,dy,dz;
     if constexpr(ad) {
            ox = detach<false>(ray.o.x()),
@@ -411,8 +410,6 @@ Intersection_OptiX Scene_OptiX::ray_intersect(const Ray<ad> &ray, Mask<ad> &acti
     UInt32 payload_v(0);
     // MaskC mask = true;
 
-    m_accel->handle = dr::opaque<UInt64>(m_accel->gas_handle);
-
     uint32_t trace_args[] {
         m_accel->handle.index(),
         ox.index(), oy.index(), oz.index(),
@@ -429,8 +426,9 @@ Intersection_OptiX Scene_OptiX::ray_intersect(const Ray<ad> &ray, Mask<ad> &acti
                         1,                    // invoke
                         active.index(), m_accel->pipeline->handle.index(), m_accel->sbt_handle.index());
     using Single = drjit::float32_array_t<FloatC>;
-    m_its.shape_id = UInt32::steal(trace_args[15]); // slow
-    m_its.triangle_id = UInt32::steal(trace_args[16]);
+    m_its.triangle_id = UInt32::steal(trace_args[15]);
+    m_its.shape_id = UInt32::steal(trace_args[16]);
+    m_its.m_size = slices(m_its.triangle_id);
     m_its.uv[0] = drjit::reinterpret_array<Single, UInt32>(UInt32::steal(trace_args[17]));
     m_its.uv[1] = drjit::reinterpret_array<Single, UInt32>(UInt32::steal(trace_args[18]));
     // m_its.uv = Vector2fC(0.5f); // very fast

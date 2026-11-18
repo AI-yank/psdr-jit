@@ -45,6 +45,45 @@ def test_cornell_material_replay(value):
     np.testing.assert_allclose(dr.grad(parameter)[0], np.sum(tangent * weights), rtol=2e-4, atol=2e-4)
 
 
+@pytest.mark.parametrize("from_input", [True, False])
+def test_shared_material_and_emitter_parameter(from_input):
+    scene, _ = _surface_setup(validate(dict(scene="cornell", derivative="albedo")), find_assets())
+    scene.opts.width = scene.opts.height = 24
+    scene.opts.spp = 64
+    scene.configure()
+    wall = scene.param_map["BSDF[id=red]"].reflectance
+    lamp = scene.param_map["Emitter[0]"]
+    tracer = PRBPathTracer(4)
+
+    def set_scene(t):
+        v = .4 + .35 * t
+        wall.data = Array3f(.85, .4, .25) * (v * v + .4 * v)
+        lamp.radiance = Array3f(20, 20, 8) * (1 + .7 * t)
+
+    def primal(t):
+        set_scene(t)
+        return tracer.renderC(scene, seed=58).numpy().astype(np.float64)
+
+    h = .004
+    fd = (primal(h) - primal(-h)) / (2 * h)
+    t = Float(0)
+    dr.enable_grad(t)
+    set_scene(t)
+    image = tracer.renderD(scene, seed=58, parameters=[t])
+    if from_input:
+        dr.forward(t)
+        tangent = dr.grad(image)
+    else:
+        dr.set_grad(t, 1)
+        tangent = dr.forward_to(image)
+    np.testing.assert_allclose(tangent.numpy(), fd, atol=4e-4, rtol=2e-4)
+    set_scene(t)
+    weights = np.random.default_rng(5).uniform(-1, 1, fd.shape).astype('f')
+    dr.set_grad(t, 0)
+    dr.backward(dr.sum(Array3f(weights) * tracer.renderD(scene, seed=58, parameters=[t])))
+    np.testing.assert_allclose(dr.grad(t)[0], (weights * fd).sum(), atol=.002, rtol=2e-4)
+
+
 def test_surface_emitter_and_stale_replay():
     scene = volume_scene(8, 4)
     lamp = scene.param_map["Emitter[0]"]

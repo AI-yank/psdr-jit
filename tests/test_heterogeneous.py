@@ -110,6 +110,30 @@ def test_empty_front_layer_with_scattering_behind_it(front_density):
     np.testing.assert_allclose(adjoint, fd, rtol=.003, atol=.002)
 
 
+def test_coarse_grid_accumulates_small_late_bounce_derivatives():
+    scene = smoke_scene(24, 96)
+    values = .25 + smoke_density((3, 4, 5))
+    grid = TensorXf(values)
+    dr.enable_grad(grid)
+    weights = np.random.default_rng(61).uniform(-.2, 1, (3, 24 * 24)).astype('f')
+
+    def render(data):
+        return tracer(data, s=.9, depth=5, bounds=FOG_CUBE_BOUNDS)
+
+    dr.backward(dr.sum(Array3f(weights) * render(grid).renderD(scene, seed=158)))
+    index = (1, 2, 1)
+    adjoint = dr.grad(grid).numpy()[index]
+    direction = np.zeros_like(values)
+    direction[index] = 1.
+    dr.set_grad(grid, TensorXf(direction))
+    tangent = dr.forward_to(render(grid).renderD(scene, seed=158)).numpy()
+    np.testing.assert_allclose(adjoint, np.sum(tangent * weights, dtype=np.float64), atol=5e-5)
+    h = .01
+    plus = render(values + h * direction).renderC(scene, seed=158).numpy().astype(np.float64)
+    minus = render(values - h * direction).renderC(scene, seed=158).numpy()
+    np.testing.assert_allclose(adjoint, np.sum(weights * (plus - minus)) / (2 * h), atol=8e-5)
+
+
 @pytest.mark.skipif(not os.environ.get("MITSUBA_PYTHON"), reason="Set MITSUBA_PYTHON for independent rendering")
 def test_backlit_plume_mitsuba(tmp_path):
     # A thin background fog gives Mitsuba collision samples in every octant.

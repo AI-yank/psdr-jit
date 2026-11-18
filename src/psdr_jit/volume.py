@@ -89,7 +89,7 @@ class _Paths:
     bounds: tuple
     max_depth: int
 
-    def vertices(self, continuation=None, mask=True):
+    def vertices(self, continuation=None):
         if self.configuration != self.scene._configuration:
             raise RuntimeError("The scene was reconfigured between rendering and path replay")
         if continuation is None:
@@ -97,7 +97,6 @@ class _Paths:
         else:
             start, ray, rng, active, include_emission = continuation
         rng = PCG32(rng)
-        active = active & mask
 
         for depth in range(start, self.max_depth + 1):
             hit = self.scene.unit_ray_intersect(ray, active)
@@ -137,7 +136,7 @@ class _Paths:
             active = scatter | surface
             # Emitter sampling already accounted for light reached along a phase ray.
             include_emission = ~scatter
-            dr.eval(ray.o, ray.d, rng.state, active, include_emission)
+            dr.schedule(ray.o, ray.d, rng.state, active, include_emission)
             vertex.continuation = (depth + 1, ray, PCG32(rng), active, include_emission)
             yield vertex
 
@@ -240,8 +239,8 @@ def _grid_response(v, bounds, absorption, scattering, density):
     return emission, weight
 
 
-def _grid_trace(paths, absorption, scattering, density, *, replay=False, continuation=None, mask=True):
-    vertices = paths.vertices(continuation, mask)
+def _grid_trace(paths, absorption, scattering, density, *, replay=False, continuation=None):
+    vertices = paths.vertices(continuation)
     return _radiance((_grid_response(v, paths.bounds, absorption, scattering, density)
                       for v in vertices), replay)
 
@@ -284,23 +283,27 @@ class _GridReplay(dr.CustomOp):
         adjoint = Array3f(self.grad_out())
         with dr.resume_grad():
             variables = self._variables()
+            inputs = [(name, v) for name, v in zip(("absorption", "scattering", "density"), variables)
+                      if dr.grad_enabled(v)]
             for depth, vertex in enumerate(self.paths.vertices()):
+                # Scatter voxel contributions into a fresh gradient each bounce.
+                # Adding tiny atomics directly to a large prefix loses precision.
+                dr.clear_grad(variables)
                 light, weight = _grid_response(vertex, self.paths.bounds, *variables)
                 w = Array3f(weight)
                 remaining = remaining - throughput * Array3f(light)
                 weight_adjoint = Array3f(0)
                 if vertex.continuation is not None:
                     weight_adjoint = _weight_adjoint(
-                        remaining, throughput, w, self.last_light > depth, self.image,
-                        lambda mask: _grid_trace(self.paths, *self.inputs,
-                                                 continuation=vertex.continuation, mask=mask)[0])
+                        remaining, throughput, w, self.last_light > depth, self.image, vertex.continuation,
+                        lambda state: _grid_trace(self.paths, *self.inputs, continuation=state)[0])
                 local = light * Array3f(throughput) + weight * weight_adjoint
                 dr.backward(dr.sum(dr.dot(local, adjoint)),
                             flags=dr.ADFlag.Default | dr.ADFlag.AllowNoGrad)
                 throughput *= w
-                dr.eval(throughput, remaining, *(dr.grad(v) for v in variables))
-            for name, variable in zip(("absorption", "scattering", "density"), variables):
-                self.set_grad_in(name, dr.grad(variable))
+                for name, v in inputs:
+                    self.set_grad_in(name, dr.grad(v))
+                dr.eval(throughput, remaining, *(self.grad_in(name) for name, _ in inputs))
 
 
 class VolumePathTracer:
