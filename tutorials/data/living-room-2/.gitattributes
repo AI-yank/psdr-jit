@@ -1,0 +1,4 @@
+# Preserve the distributed scene data and omit generated geometry from line diffs.
+models/*.obj -text -diff
+scene_v3.xml -text
+LICENSE.txt -text whitespace=-blank-at-eol

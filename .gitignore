@@ -8,7 +8,8 @@
 *.exe
 __pycache__
 build/
-tutorials/data/living-room-2/
+tutorials/data/living-room-2/scene_v0.6.xml
+tutorials/data/living-room-2/TungstenRender.*
 .venv/
 .pytest_cache/
 ext_win64/

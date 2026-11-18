@@ -42,19 +42,22 @@ core, curling stem, and two colored lights. The medium uses a 28 × 40 × 32
 density grid (z, y, x). The sliders scale local absorption and scattering
 throughout the grid. Open `/?scene=smoke` to start on this scene.
 
-Open `/?scene=white_room` for **White Room · plume**. Adjust **Density scale**
+Open [White Room · plume](http://127.0.0.1:8080/?scene=white_room). Adjust **Density scale**
 and press **Render**. Zero removes the plume and one reproduces the validation
 scene. **PRB + FD** renders both density gradients from the same samples at each
 pass. Both views use one CubicL scale. Relative L2 and RMSE compare the
 accumulated linear RGB gradients before color mapping. **Step h** controls the
 finite-difference perturbation.
 
-The room uses the published camera, lights and meshes with diffuse materials
-and a four-bounce heterogeneous medium. Extract the optional Mitsuba archive
-into `tutorials/data` (or your `--assets` directory) so that
-`living-room-2/scene_v3.xml`, `models` and `textures` are together in the
-`living-room-2` folder. The scene is *The White Room* by Jay-Artist, distributed
-by Benedikt Bitterli. [Mitsuba scene archive](https://benedikt-bitterli.me/resources/mitsuba/living-room-2.zip) · [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)
+The checkout includes the room in `tutorials/data/living-room-2`. The demo uses
+the published camera, lights, meshes and diffuse textures, approximates the
+other materials as diffuse, and adds a four-bounce heterogeneous plume.
+The default comparison uses density scale 1, step 0.004, seed 42, and 24
+passes of 32 samples per pixel at 256 × 144. On an RTX 4090 this produced
+about 0.00049% relative L2 error between the two gradient images.
+
+The scene is *The White Room* by Jay-Artist, distributed by Benedikt Bitterli.
+[Original scene archive](https://benedikt-bitterli.me/resources/mitsuba/living-room-2.zip) · [Bundled attribution](data/living-room-2/LICENSE.txt) · [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)
 
 The right panel shows the **signed mean RGB derivative of linear radiance**.
 Under **Gradient → Method**, select **Forward AD** or **Finite difference**.

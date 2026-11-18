@@ -56,8 +56,6 @@ def test_cubicl_gradient_and_legend():
 
 
 @GPU
-@pytest.mark.skipif(not (Path(ASSETS) / "living-room-2/scene_v3.xml").is_file(),
-                    reason="Optional White Room scene archive required")
 def test_white_room_density_comparison():
     settings = validate(dict(scene="white_room", resolution=64, spp=8))
     assert (settings["method"], settings["derivative"]) == ("compare", "density")

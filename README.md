@@ -232,6 +232,10 @@ python -m pip install ".[web]"
 python -m psdr_jit.web
 ```
 
+Open [White Room · plume](http://127.0.0.1:8080/?scene=white_room) to compare
+the density gradient from path replay and finite differences. The checkout
+includes the meshes and textures under `tutorials/data/living-room-2`.
+
 See the [tutorial setup and execution guide](tutorials/README.md) for the five
 notebooks, optional dependencies, and commands to rerun them before publishing.
 
