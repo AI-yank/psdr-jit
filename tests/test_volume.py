@@ -99,6 +99,33 @@ def quad(x0, x1, y0, y1, z, toward_camera=True):
     return mesh
 
 
+@pytest.mark.parametrize("two_sided", [False, True])
+def test_back_facing_diffuse_panel(two_sided):
+    # The camera sees the back of a panel. Its only light is behind the camera.
+    scene = psdr.Scene()
+    scene.opts = psdr.RenderOption(8, 8, 64, 0, 0)
+    scene.opts.log_level = 0
+    scene.add_Sensor(psdr.OrthographicCamera(.01, 1000.))
+    scene.add_BSDF(psdr.DiffuseBSDF([.5] * 3), "panel", two_sided)
+    scene.add_BSDF(psdr.DiffuseBSDF([0.] * 3), "black")
+    scene.add_Mesh(quad(-2, 2, -2, 2, 2, False), "panel")
+    scene.add_Mesh(quad(-100, 100, -100, 100, -1, False), "black", psdr.AreaLight([1.] * 3))
+    scene.configure()
+
+    # Both the primal BSDF sampler used by volume transport and the AD sampler
+    # used by surface replay must send reflected light back towards the camera.
+    volume = renderer(0., 0., depth=1, bounds=((10, 10, 10), (11, 11, 11)))
+    expected = .5 if two_sided else 0.
+    np.testing.assert_allclose(volume.renderC(scene, seed=8).numpy().mean(), expected, atol=.005)
+    reflectance = Float(.5)
+    dr.enable_grad(reflectance)
+    scene.param_map["BSDF[id=panel]"].reflectance.data = dr.cuda.ad.Array3f(reflectance)
+    image = psdr.PRBPathTracer(1).renderD(scene, seed=8, parameters=[reflectance])
+    dr.forward(reflectance)
+    np.testing.assert_allclose(image.numpy().mean(), expected, atol=.005)
+    np.testing.assert_allclose(dr.grad(image).numpy().mean(), 2 * expected, atol=.01)
+
+
 def test_opaque_blocker_extinguishes_scattered_light():
     scene = volume_scene(16, 32)
     r = renderer(.3, .8)

@@ -50,14 +50,7 @@ BSDFSampleD Diffuse::sample(const IntersectionD &its, const Vector3fD &sample, M
 }
 
 template <bool ad>
-BSDFSample<ad> Diffuse::__sample(const Intersection<ad> &_its, const Vector3f<ad> &sample, Mask<ad> active) const {
-
-    Intersection<ad> its(_its);
-
-    if (m_twoSide) {
-        its.wi.z() = drjit::abs(its.wi.z());
-    }
-
+BSDFSample<ad> Diffuse::__sample(const Intersection<ad> &its, const Vector3f<ad> &sample, Mask<ad> active) const {
     Float<ad> cos_theta_i = Frame<ad>::cos_theta(its.wi);
     BSDFSample<ad> bs;
     Vector2f<ad> sample2 = tail<2>(sample);
@@ -65,6 +58,10 @@ BSDFSample<ad> Diffuse::__sample(const Intersection<ad> &_its, const Vector3f<ad
 
     bs.eta = 1.0f;
     bs.pdf = warp::square_to_cosine_hemisphere_pdf<ad>(bs.wo);
+    if (m_twoSide) {
+        bs.wo.z() = drjit::mulsign(bs.wo.z(), cos_theta_i);
+        cos_theta_i = drjit::abs(cos_theta_i);
+    }
     bs.is_valid = active && (cos_theta_i > 0.f);
     return detach(bs);
 }
