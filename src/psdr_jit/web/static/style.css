@@ -154,7 +154,7 @@ button {
 button:hover {
   background:#424d5c;
 }
-#render {
+#render, #stop {
   flex:1;
   background:#37648a;
   border-color:#5b91bc;
@@ -242,9 +242,20 @@ figcaption a {
   border-top:1px solid #2c323a;
 }
 .ramp {
-  height:7px;
+  position:relative;
   flex:1;
-  background:linear-gradient(90deg,#3391ff,#13161a,#ff4c28);
+}
+.ramp img {
+  display:block;
+  width:100%;
+  height:7px;
+}
+.ramp span {
+  position:absolute;
+  top:100%;
+  left:50%;
+  transform:translateX(-50%);
+  line-height:9px;
 }
 .scale-note {
   font-size:9px;

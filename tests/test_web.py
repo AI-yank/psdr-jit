@@ -15,7 +15,8 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from psdr_jit.web.render import find_assets, render_arrays, validate
+from psdr_jit.web import render as web_render
+from psdr_jit.web.render import encode_preview, find_assets, render_arrays, validate
 from psdr_jit.web.server import Handler, Jobs
 
 ASSETS = str(Path(__file__).resolve().parents[1] / "tutorials/data")
@@ -24,7 +25,9 @@ GPU = pytest.mark.skipif(not dr.has_backend(dr.JitBackend.CUDA), reason="CUDA re
 
 @pytest.mark.parametrize("settings", [None, [], {"scene":"missing"}, {"spp":4096},
     {"x":float("nan")}, {"light":float("inf")}, {"seed":True}, {"seed":1.5}, {"seed":10**400},
-    {"resolution":128.0}, {"roughness":0}, {"exposure":4}, {"file":"/tmp/scene"}])
+    {"resolution":128.0}, {"roughness":0}, {"exposure":4}, {"file":"/tmp/scene"},
+    {"npass":0}, {"npass":2.5}, {"npass":True}, {"npass":65537},
+    {"method":"unknown"}, {"fd_step":0}, {"fd_step":float("nan")}, {"fd_step":1}])
 def test_reject_invalid_settings(settings):
     with pytest.raises(ValueError):
         validate(settings)
@@ -33,6 +36,126 @@ def test_reject_invalid_settings(settings):
 def test_missing_assets(tmp_path):
     with pytest.raises(ValueError, match="--assets"):
         find_assets(tmp_path)
+
+
+def preview_pixels(preview, key):
+    png = base64.b64decode(preview[key].split(",", 1)[1])
+    with Image.open(io.BytesIO(png)) as image:
+        return np.array(image)
+
+
+def test_cubicl_gradient_and_legend():
+    signed = np.linspace(-1, 1, 5).reshape(1, 5, 1)
+    gradient = np.repeat(signed, 3, axis=2)
+    result = encode_preview(validate({}), np.zeros_like(gradient), gradient)
+    ramp = preview_pixels(result, "colorbar")[0]
+    assert ramp.shape == (256, 3)
+    # Published endpoints of the supplied RGB table and the zero bin.
+    np.testing.assert_array_equal(ramp[[0, 128, 255]], [[120, 0, 133], [73, 207, 126], [249, 150, 91]])
+    np.testing.assert_array_equal(preview_pixels(result, "gradient")[0], ramp[[0, 64, 128, 192, 255]])
+
+
+@GPU
+def test_fog_cube_visible_against_vacuum():
+    settings = validate(dict(scene="fog_cube", resolution=64, spp=16, derivative="scattering"))
+    image, gradient = render_arrays(settings, ASSETS)
+    vacuum, _ = render_arrays(settings | dict(absorption=0., scattering=0.), ASSETS)
+    # Above the grid there is no directly visible emitter. The two colors in
+    # the center of the film come from light scattered inside the cube.
+    center = np.s_[16:28, 20:44, :]
+    assert vacuum[center].max() == 0
+    assert image[center].mean() > .1
+    assert gradient[center].mean() > 0
+    left = image[20:29, 18:30].mean(axis=(0, 1))
+    right = image[20:29, 34:46].mean(axis=(0, 1))
+    assert left[0] > left[2] and right[2] > right[0]
+    assert image[:4].max() == 0
+
+
+@GPU
+@pytest.mark.parametrize("absorption", [0., .3, 2.999])
+def test_fd_backlit_absorber(absorption):
+    settings = validate(dict(scene="volume", method="fd", derivative="absorption",
+                             absorption=absorption, scattering=0., fd_step=.02, resolution=64, spp=4))
+    image, gradient = render_arrays(settings, ASSETS)
+    # Unit-thickness slab in front of a panel with red radiance 4.
+    assert image[32, 32, 0] == pytest.approx(4 * np.exp(-absorption), rel=2e-5)
+    np.testing.assert_allclose(gradient, -image, rtol=3e-4, atol=1e-6)
+
+
+@GPU
+@pytest.mark.parametrize("scene,integrator", [("cornell", "path"), ("bunny", "direct")])
+def test_fd_light_linearity(scene, integrator):
+    settings = validate(dict(scene=scene, integrator=integrator, method="fd", derivative="light",
+                             light=1.5, fd_step=.05, resolution=64, spp=4))
+    image, gradient = render_arrays(settings, ASSETS)
+    expected = image / settings["light"]
+    assert np.linalg.norm(gradient - expected) < .001 * np.linalg.norm(expected)
+
+
+@GPU
+@pytest.mark.parametrize("scene,method,parameter", [
+    ("bunny", "fd", "albedo"), ("cornell", "ad", "x"),
+])
+def test_surface_passes_reuse_one_scene_and_match_fresh_render(scene, method, parameter, monkeypatch):
+    settings = validate(dict(scene=scene, method=method, derivative=parameter, npass=2,
+                             x=.2, light=1.3, resolution=64, spp=8, seed=65535))
+    expected = render_arrays(settings | {"seed": 0}, ASSETS)
+    setups = []
+    prepare = web_render._setup_scene
+
+    def track_setup(settings, assets):
+        setups.append(settings["scene"])
+        return prepare(settings, assets)
+
+    monkeypatch.setattr(web_render, "_setup_scene", track_setup)
+    web_render.render_pass(1, settings, ASSETS, 0)
+    output = web_render.render_pass(1, settings, ASSETS, 1)
+    assert setups == [scene]
+    for observed, reference in zip(output, expected):
+        assert np.linalg.norm(observed - reference) < .002 * np.linalg.norm(reference)
+
+
+def wait_for_job(jobs, identifier, first_preview=False):
+    completed = 0
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        state = jobs.status(identifier, after=completed)
+        completed = state["completed"]
+        if state["state"] not in ("running", "stopping") or (first_preview and completed):
+            return jobs.status(identifier)
+    pytest.fail("Progressive renderer timed out")
+
+
+@GPU
+@pytest.mark.parametrize("method", ["ad", "fd"])
+def test_progressive_average_and_stop(method):
+    settings = validate(dict(scene="fog_cube", method=method, resolution=64, spp=4, seed=65535, npass=2))
+    jobs = Jobs(ASSETS)
+    try:
+        identifier = jobs.submit(settings)
+        result = wait_for_job(jobs, identifier)
+        assert (result["state"], result["completed"]) == ("done", 2)
+        first = render_arrays(settings, ASSETS)
+        second = render_arrays(settings | {"seed":0}, ASSETS)
+        assert not np.array_equal(first[0], second[0])
+        assert not np.array_equal(first[1], second[1])
+        mean = [np.mean([a, b], axis=0, dtype=np.float64) for a, b in zip(first, second)]
+        expected = encode_preview(settings, *mean)
+        for key in ("render", "gradient"):
+            np.testing.assert_allclose(preview_pixels(result["result"], key), preview_pixels(expected, key), atol=1)
+        long_job = jobs.submit(settings | {"npass":65536})
+        assert jobs.stop(identifier) is None
+        assert wait_for_job(jobs, long_job, first_preview=True)["state"] == "running"
+        assert jobs.stop(long_job)["state"] in ("stopping", "stopped")
+        result = wait_for_job(jobs, long_job)
+        assert result["state"] == "stopped" and 0 < result["completed"] < 65536
+        assert "result" not in jobs.status(long_job, after=result["completed"])
+        fresh = wait_for_job(jobs, jobs.submit(settings | {"npass":1}))
+        assert fresh["completed"] == 1
+        assert fresh["result"]["mean"] == pytest.approx(first[0].mean(), rel=1e-5)
+    finally:
+        jobs.close()
 
 
 @GPU
@@ -89,8 +212,9 @@ def test_http_render_pipeline():
         assert request("/api/jobs/0")[0] == 404
         assert request("/api/render", {"spp":100000})[0] == 400
         assert request("/api/render", {}, {"Content-Type":"application/json", "Origin":"https://example.com"})[0] == 403
-        for scene in ("cornell", "bunny"):
-            status, body = request("/api/render", dict(scene=scene, resolution=64, spp=4, derivative="light"))
+        for scene in ("cornell", "bunny", "volume", "fog_cube"):
+            parameter = "scattering" if scene in ("volume", "fog_cube") else "light"
+            status, body = request("/api/render", dict(scene=scene, resolution=64, spp=4, derivative=parameter))
             assert status == 202
             identifier = json.loads(body)["id"]
             assert request("/api/render", {})[0] == 409

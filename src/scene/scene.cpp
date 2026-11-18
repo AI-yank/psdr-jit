@@ -314,6 +314,8 @@ void Scene::configure(std::vector<int> active_sensor) {
         PSDR_ASSERT_MSG(sensor_id >= 0 && static_cast<size_t>(sensor_id) < m_sensors.size(),
                         "Active sensor index out of range");
     }
+    // Invalidate pending volume replays before mutating the configured scene.
+    ++m_configuration;
     
     // Build the parameter map
 

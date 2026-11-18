@@ -249,6 +249,17 @@ NB_MODULE(psdr_jit, m) {
         .def_ro("t", &InteractionD::t);
 
     py::class_<IntersectionC, InteractionC>(m, "IntersectionC")
+        .def("_emission", [](const IntersectionC &hit) {
+            return hit.Le(hit.is_valid());
+        })
+        .def("_sample_bsdf", [](const IntersectionC &hit, const Vector3fC &u) {
+            auto bsdf = hit.shape->bsdf();
+            MaskC active = hit.is_valid() && neq(bsdf, nullptr);
+            auto bs = bsdf->sampleC(hit, u, active);
+            active &= bs.is_valid && bs.pdf > 0.f;
+            auto weight = bsdf->evalC(hit, bs.wo, active) / select(active, bs.pdf, 1.f);
+            return std::make_pair(hit.sh_frame.to_world(bs.wo), select(active, weight, 0.f));
+        })
         .def_ro("shape", &IntersectionC::shape)
         .def_ro("n", &IntersectionC::n)
         .def_ro("sh_frame", &IntersectionC::sh_frame)
@@ -404,6 +415,24 @@ NB_MODULE(psdr_jit, m) {
 
     py::class_<Scene, Object>(m, "Scene")
         .def(py::init<>())
+        .def_ro("_configuration", &Scene::m_configuration)
+        .def("_primary_ray", [](const Scene &scene, int sensor, const Vector2fC &uv) {
+            PSDR_ASSERT_MSG(scene.is_ready(), "Scene must be configured!");
+            PSDR_ASSERT_MSG(sensor >= 0 && sensor < scene.m_num_sensors, "Invalid sensor id!");
+            return scene.m_sensors[sensor]->sample_primary_ray(uv);
+        })
+        .def("_sample_incident_light", [](const Scene &scene, const Vector3fC &p,
+                                          const Vector2fC &u, MaskC active) {
+            auto light = scene.sample_emitter_position<false>(p, u, active);
+            Vector3fC offset = light.p - p;
+            FloatC distance = norm(offset);
+            active &= light.is_valid && light.pdf > 0.f && distance > RayEpsilon;
+            Vector3fC direction = offset / select(active, distance, 1.f);
+            auto hit = scene.ray_intersect<false>(RayC(p, direction), active);
+            active &= hit.is_valid() && abs(hit.t - distance) < ShadowEpsilon;
+            FloatC geometry = abs(dot(light.n, direction)) / select(active, sqr(distance) * light.pdf, 1.f);
+            return std::make_tuple(direction, distance, select(active, hit.Le(active) * geometry, 0.f));
+        })
 
         .def("add_Sensor", &Scene::add_Sensor, "Add Sensor")
         .def("add_EnvironmentMap", py::overload_cast<const char *, ScalarMatrix4f, float>(&Scene::add_EnvironmentMap), "Add EnvironmentMap")

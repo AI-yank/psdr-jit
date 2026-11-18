@@ -10,21 +10,43 @@ python -m psdr_jit.web
 Open **http://127.0.0.1:8080**. The first render starts automatically. Change
 settings and press **Render** or **Ctrl+Enter** (Cmd+Enter on macOS keyboards).
 The first render of a scene or derivative can take longer while kernels compile.
-Both image panels show the last completed render; “Settings changed” means the
-controls have unapplied edits. The arrows save the displayed PNGs.
+Set **Passes** (`npass`, default 8) and **SPP / pass** to control progressive
+rendering. Each pass advances the seed. Both panels display the running mean
+of all completed passes, and the footer shows the pass count and total samples
+per pixel. The renderer averages linear radiance and signed gradients before
+applying exposure or the CubicL color map. **Stop** finishes the current pass
+and keeps the accumulated images available to download. **Render** starts a
+fresh accumulation with the current controls. Reloading reconnects to an active run.
 
 The demo uses the bundled Cornell-box and environment-lit bunny assets. Choose
 path tracing (two bounces) or direct lighting, move the small sphere or bunny,
 and adjust roughness, diffuse albedo, or illumination. Position values are
 normalized: one unit moves the sphere 100 scene units or the bunny 30 units.
 
-The right panel shows the **signed mean RGB derivative of linear radiance**,
-computed with Dr.Jit forward AD. Blue is negative; orange is positive. Its
+Choose **Backlit fog** to render a rectangular light behind a bounded
+homogeneous medium. The absorption and scattering sliders are in inverse
+scene units. Select either coefficient in the gradient panel. The image
+includes up to three scattering events. The halo outside the light's outline
+comes from in-scattering.
+
+Choose **Homogeneous fog cube** for an angled view of a cube lit by warm and
+cool side lights. Set absorption and scattering to zero to see the grid beneath
+it, then increase scattering to see the volume appear.
+
+The right panel shows the **signed mean RGB derivative of linear radiance**.
+Under **Gradient → Method**, select **Forward AD** or **Finite difference**.
+Finite difference keeps the left image at the selected value and varies only
+the chosen parameter. Each pass uses the same seed for all three renders.
+**Step h** defaults to 0.01 in the slider's units. The estimator uses a central
+difference where both offsets fit and a second-order one-sided difference near
+a slider limit. For a moving silhouette, increasing the step or the number of
+passes can make the change easier to see. The CubicL colorbar runs from purple at the
+negative limit through green at zero to peach at the positive limit. Its
 symmetric display range is the 99th percentile of absolute derivatives (falling
 back to the maximum when sparse), shown numerically under the image. Values
 outside this range clip for display. Each render rescales independently, so use
 the labels when comparing magnitudes. Exposure affects only the left display.
-Geometry derivatives include primary and secondary boundary samples, each at
+AD geometry derivatives include primary and secondary boundary samples, each at
 the selected sample count. Low sample counts produce noisy estimates.
 
 Rendering runs in one spawned GPU process, with one active job at a time.

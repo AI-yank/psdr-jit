@@ -3,3 +3,4 @@
 import drjit as _drjit
 
 from .psdr_jit import *
+from .volume import HomogeneousMedium, VolumePathTracer

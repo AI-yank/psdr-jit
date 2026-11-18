@@ -133,6 +133,49 @@ output = cv2.cvtColor(diff_img, cv2.COLOR_RGB2BGR)
 cv2.imwrite("psdr_jit_diff_debug.exr", output)
 ```
 
+### Homogeneous volumes and path replay
+
+`VolumePathTracer` renders one axis-aligned, homogeneous medium in a configured
+PSDR scene. It supports absorption, isotropic multiple scattering, area-light
+sampling with attenuated shadow rays, and surface BSDF bounces. Coefficients
+are scalar inverse scene units. `max_depth` counts surface and medium scattering
+events together. Zero renders transmitted emission alone.
+
+```python
+import drjit as dr
+import psdr_jit as psdr
+from psdr_jit.web.render import volume_scene  # self-contained, backlit test scene
+
+scene = volume_scene(64, 32)
+a, s = dr.cuda.ad.Float(.3), dr.cuda.ad.Float(.8)
+dr.enable_grad(a, s)
+medium = psdr.HomogeneousMedium((-.75, -.75, 1), (.75, .75, 2), a, s)
+tracer = psdr.VolumePathTracer(medium, max_depth=3)
+image = tracer.renderD(scene, seed=42)
+dr.backward(dr.mean(image, axis=None))
+print(dr.grad(a), dr.grad(s))
+```
+
+`renderC` returns linear RGB. `renderD` also supports forward image derivatives
+and reverse loss gradients for both medium coefficients. Keep the scene, lights,
+and materials fixed between the render and differentiation. The integrator
+clips each ray to the box and nearest surface, integrates unscattered emission
+analytically, and estimates in-scattering by sampling a distance uniformly on
+the bounded segment. This proposal is intended for moderately dense media.
+Backward replay regenerates the same camera paths and random choices, using
+the remaining path radiance to differentiate extinction. The scattering-factor
+derivative uses the product rule so vacuum and pure absorption have defined
+one-sided derivatives. Spatial density grids and geometry gradients are outside
+the current volume implementation.
+
+`python -m pytest tests/test_volume.py -q` checks actual GPU images against
+Beer–Lambert transmission, diffuse reflection quadrature, finite differences,
+and shadow occlusion. For the independent renderer comparison, install
+`mitsuba==3.9.1` and `numpy` in a separate environment, set `MITSUBA_PYTHON`
+to its Python executable, and run `python -m pytest tests/test_volume.py -k mitsuba -s`.
+The test renders the same film and emitter with Mitsuba's CUDA `prbvolpath`,
+then compares linear RGB and the gradient of mean radiance in the scattered halo.
+
 ### More tutorials
 
 For a compact browser interface with scene controls and side-by-side renders and

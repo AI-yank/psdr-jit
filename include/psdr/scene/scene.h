@@ -50,6 +50,7 @@ public:
     BoundarySegSampleDirect sample_boundary_segment_direct(const Vector3fC &sample3, MaskC active = true) const;
 
     int seed = 0;
+    uint64_t m_configuration = 0;
 
     // std::string to_string() const override;
 
