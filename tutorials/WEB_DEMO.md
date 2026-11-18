@@ -23,6 +23,10 @@ path tracing (two bounces) or direct lighting, move the small sphere or bunny,
 and adjust roughness, diffuse albedo, or illumination. Position values are
 normalized: one unit moves the sphere 100 scene units or the bunny 30 units.
 
+Select **Surface PRB (2)** on the Cornell box or bunny to replay BSDF-sampled
+paths for material or emitter derivatives. Small area lights may need more
+passes. Use the path or direct integrator for position derivatives.
+
 Choose **Backlit fog** to render a rectangular light behind a bounded
 homogeneous medium. The absorption and scattering sliders are in inverse
 scene units. Select either coefficient in the gradient panel. The image
@@ -32,6 +36,11 @@ comes from in-scattering.
 Choose **Homogeneous fog cube** for an angled view of a cube lit by warm and
 cool side lights. Set absorption and scattering to zero to see the grid beneath
 it, then increase scattering to see the volume appear.
+
+Choose **Smoke plume** for a close view of a heterogeneous vortex with a hollow
+core, curling stem, and two colored lights. The medium uses a 28 × 40 × 32
+density grid (z, y, x). The sliders scale local absorption and scattering
+throughout the grid. Open `/?scene=smoke` to start on this scene.
 
 The right panel shows the **signed mean RGB derivative of linear radiance**.
 Under **Gradient → Method**, select **Forward AD** or **Finite difference**.

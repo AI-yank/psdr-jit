@@ -133,9 +133,27 @@ output = cv2.cvtColor(diff_img, cv2.COLOR_RGB2BGR)
 cv2.imwrite("psdr_jit_diff_debug.exr", output)
 ```
 
-### Homogeneous volumes and path replay
+### Surface path replay
 
-`VolumePathTracer` renders one axis-aligned, homogeneous medium in a configured
+`PRBPathTracer` samples BSDF directions and replays the same camera paths for
+material and light derivatives. It supports forward and reverse AD and keeps a fixed number of RGB values per camera sample as
+bounce depth increases. A BSDF-sampled path must hit an emitter to contribute,
+so small lights can require many samples. Use fixed geometry and camera poses.
+
+```python
+import drjit as dr
+import psdr_jit as psdr
+
+lamp = scene.param_map["Emitter[0]"]  # configured scene with an area emitter
+dr.enable_grad(lamp.radiance)
+image = psdr.PRBPathTracer(max_depth=4).renderD(scene, seed=3, parameters=[lamp.radiance])
+dr.backward(dr.mean(image, axis=None))
+print(dr.grad(lamp.radiance))
+```
+
+### Bounded volumes and path replay
+
+`VolumePathTracer` renders one axis-aligned homogeneous or trilinear density medium in a configured
 PSDR scene. It supports absorption, isotropic multiple scattering, area-light
 sampling with attenuated shadow rays, and surface BSDF bounces. Coefficients
 are scalar inverse scene units. `max_depth` counts surface and medium scattering
@@ -165,8 +183,32 @@ the bounded segment. This proposal is intended for moderately dense media.
 Backward replay regenerates the same camera paths and random choices, using
 the remaining path radiance to differentiate extinction. The scattering-factor
 derivative uses the product rule so vacuum and pure absorption have defined
-one-sided derivatives. Spatial density grids and geometry gradients are outside
-the current volume implementation.
+one-sided derivatives.
+
+For spatial variation, pass `HeterogeneousMedium` a nonnegative 3D density
+tensor in **(z, y, x)** order. Its outermost vertices lie on the box faces.
+At each point the absorption and scattering rates equal the interpolated
+density times `sigma_a` and `sigma_s`. Camera, continuation, and shadow rays
+use exact cell-by-cell integration of the trilinear density. Density vertices
+and both coefficients support differentiation together.
+
+```python
+from psdr_jit.web.volume_scenes import FOG_CUBE_BOUNDS, smoke_density, smoke_scene
+
+scene = smoke_scene(64, 32)
+density = dr.cuda.ad.TensorXf(smoke_density())
+dr.enable_grad(density)
+medium = psdr.HeterogeneousMedium(*FOG_CUBE_BOUNDS, .3, .8, density)
+image = psdr.VolumePathTracer(medium, max_depth=3).renderD(scene, seed=42)
+dr.backward(dr.mean(image, axis=None))
+voxel_gradient = dr.grad(density).numpy()
+```
+
+Grid reverse mode replays the sampled path with a fixed number of per-sample
+buffers. For a small or zero continuation weight or a poorly conditioned radiance
+subtraction, it retraces the affected suffix with the same random numbers.
+This trades extra computation on those paths for stable empty-cell gradients.
+Both volume models use one bounded medium, isotropic scattering, and fixed surfaces.
 
 `python -m pytest tests/test_volume.py -q` checks actual GPU images against
 Beer–Lambert transmission, diffuse reflection quadrature, finite differences,
@@ -175,6 +217,10 @@ and shadow occlusion. For the independent renderer comparison, install
 to its Python executable, and run `python -m pytest tests/test_volume.py -k mitsuba -s`.
 The test renders the same film and emitter with Mitsuba's CUDA `prbvolpath`,
 then compares linear RGB and the gradient of mean radiance in the scattered halo.
+`tests/test_heterogeneous.py` also compares a spatially varying plume with
+Mitsuba, including density gradients pooled in eight spatial regions.
+`tests/test_surface_prb.py` checks four-bounce Cornell box radiance against the
+native MIS path tracer and checks material derivatives against finite differences.
 
 ### More tutorials
 

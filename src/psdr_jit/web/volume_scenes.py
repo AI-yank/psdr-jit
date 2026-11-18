@@ -1,4 +1,4 @@
-"""Self-contained homogeneous scenes for the demo and reference renders."""
+"""Self-contained volume scenes for the demo and reference renders."""
 
 VOLUME_BOUNDS = ((-.75, -.75, 1.), (.75, .75, 2.))
 FOG_CUBE_BOUNDS = ((-.75, -.75, -.75), (.75, .75, .75))
@@ -31,13 +31,22 @@ def volume_scene(size, spp, light=1.):
 
 def fog_cube_scene(size, spp, light=1.):
     """View a free-standing cube of fog from above, between two colored area lights."""
+    return _side_lit_scene(size, spp, light, 38., [2.4, 1.85, -3.3], .65)
+
+
+def smoke_scene(size, spp, light=1.):
+    """Frame the curling plume closely enough to see its hollow vortex core."""
+    return _side_lit_scene(size, spp, light, 23., [2.4, 2.3, -3.3], .22)
+
+
+def _side_lit_scene(size, spp, light, fov, eye, grid_radiance):
     import numpy as np
     import psdr_jit as psdr
     from drjit.cuda import Array3f, Array3i
     from drjit.cuda.ad import Matrix4f
 
-    camera = psdr.PerspectiveCamera(38., .01, 100.)
-    eye = np.array([2.4, 1.85, -3.3])
+    camera = psdr.PerspectiveCamera(fov, .01, 100.)
+    eye = np.asarray(eye)
     forward = -eye / np.linalg.norm(eye)
     horizontal = np.cross([0., 1., 0.], forward)
     horizontal /= np.linalg.norm(horizontal)
@@ -77,6 +86,29 @@ def fog_cube_scene(size, spp, light=1.):
         triangles.extend([(i, i + 1, i + 2), (i, i + 2, i + 3)])
     grid = psdr.Mesh()
     grid.load_raw(Array3f(np.array(grid_points).T.copy()), Array3i(np.array(triangles).T.copy()))
-    sc.add_Mesh(grid, "black", psdr.AreaLight([.65 * light] * 3))
+    sc.add_Mesh(grid, "black", psdr.AreaLight([grid_radiance * light] * 3))
     sc.configure()
     return sc
+
+
+def smoke_density(shape=(28, 40, 32)):
+    """A tilted vortex ring fed by a curling stem, sampled at grid vertices."""
+    import numpy as np
+
+    z, y, x = np.ogrid[tuple(slice(-1, 1, complex(0, n)) for n in shape)]
+    # The two cores in a vertical section are the sides of a hollow vortex ring.
+    cx = .11 + .10 * np.sin(3 * y)
+    cz = .06 * np.cos(4 * y)
+    angle = np.arctan2(z - cz, x - cx)
+    radius = np.hypot(x - cx, z - cz)
+    lobes = .055 * np.sin(5 * angle) + .035 * np.cos(3 * angle)
+    ring = np.exp(-((radius - .52 - lobes) / .125)**2
+                  - ((y - .42 + .29 * x - .38 * z - .07 * np.sin(4 * angle)) / .14)**2)
+    stem_x = -.06 + .19 * np.sin(4.7 * y + 1.)
+    stem_z = .13 * np.cos(5 * y)
+    width = .13 + .09 * np.exp(-((y - .05) / .36)**2)
+    stem = np.exp(-((x - stem_x)**2 + (z - stem_z)**2) / width**2
+                  - ((y + .35) / .59)**4)
+    curl = np.exp(-((radius - .32 + .12 * np.sin(4 * y)) / .13)**2
+                  - ((y - .04 - .17 * np.sin(angle)) / .33)**2)
+    return (4.0 * ring + 3.1 * stem + 1.3 * curl).astype(np.float32)

@@ -267,6 +267,21 @@ NB_MODULE(psdr_jit, m) {
         .def_ro("J", &IntersectionC::J);
 
     py::class_<IntersectionD, InteractionD>(m, "IntersectionD")
+        .def("_emission", [](const IntersectionD &hit) {
+            return hit.Le(hit.is_valid());
+        })
+        .def("_prb_sample", [](const IntersectionD &hit, const Vector3fD &u) {
+            auto bsdf = hit.shape->bsdf();
+            MaskD active = hit.is_valid() && neq(bsdf, nullptr);
+            auto bs = bsdf->sampleD(hit, u, active);
+            active &= bs.is_valid && bs.pdf > 0.f;
+            return std::make_tuple(bs.wo, hit.sh_frame.to_world(bs.wo), select(active, bs.pdf, 0.f));
+        })
+        .def("_prb_weight", [](const IntersectionD &hit, const Vector3fD &wo, const FloatD &pdf) {
+            MaskD active = pdf > 0.f;
+            return select(active, hit.shape->bsdf()->evalD(hit, wo, active) /
+                                  select(active, pdf, 1.f), 0.f);
+        })
         .def_ro("shape", &IntersectionD::shape)
         .def_ro("n", &IntersectionD::n)
         .def_ro("sh_frame", &IntersectionD::sh_frame)

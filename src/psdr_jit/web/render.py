@@ -5,13 +5,13 @@ import io
 from functools import lru_cache
 from pathlib import Path
 
-from .volume_scenes import FOG_CUBE_BOUNDS, VOLUME_BOUNDS, fog_cube_scene, volume_scene
+from .volume_scenes import FOG_CUBE_BOUNDS, VOLUME_BOUNDS, fog_cube_scene, smoke_density, smoke_scene, volume_scene
 
 DEFAULTS = dict(scene="cornell", integrator="path", derivative="x", x=0., y=0.,
                 roughness=.3, albedo=.7, light=1., resolution=128, spp=8, seed=42,
                 exposure=0., absorption=.3, scattering=.8, npass=8, method="ad", fd_step=.01)
-VOLUME_SCENES = ("volume", "fog_cube")
-ENUMS = dict(scene=("cornell", "bunny", *VOLUME_SCENES), integrator=("path", "direct", "volume"),
+VOLUME_SCENES = ("volume", "fog_cube", "smoke")
+ENUMS = dict(scene=("cornell", "bunny", *VOLUME_SCENES), integrator=("path", "prb", "direct", "volume"),
              method=("ad", "fd"), derivative=("x", "y", "roughness", "albedo", "light", "absorption", "scattering"),
              resolution=(64, 128, 256), spp=(4, 8, 16, 32))
 BOUNDS = dict(x=(-1, 1), y=(-1, 1), roughness=(.08, 1), albedo=(.05, 1),
@@ -33,6 +33,10 @@ def validate(data):
     if volume:
         settings["integrator"] = data.get("integrator", "volume")
         settings["derivative"] = data.get("derivative", "absorption")
+    if settings["integrator"] == "prb":
+        settings["derivative"] = data.get("derivative", "albedo")
+        if settings["derivative"] in ("x", "y"):
+            raise ValueError("Surface PRB requires fixed geometry")
     if ((settings["integrator"] == "volume") != volume or
             (settings["derivative"] in ("absorption", "scattering")) != volume):
         raise ValueError("Invalid integrator or derivative for this scene")
@@ -64,12 +68,18 @@ def find_assets(path=None):
 def _volume_setup(settings):
     import psdr_jit as psdr
 
-    if settings["scene"] == "fog_cube":
-        sc = fog_cube_scene(settings["resolution"], settings["spp"], settings["light"])
+    smoke = settings["scene"] == "smoke"
+    if smoke or settings["scene"] == "fog_cube":
+        build_scene = smoke_scene if smoke else fog_cube_scene
+        sc = build_scene(settings["resolution"], settings["spp"], settings["light"])
         bounds = FOG_CUBE_BOUNDS
     else:
         sc = volume_scene(settings["resolution"], settings["spp"], settings["light"])
         bounds = VOLUME_BOUNDS
+
+    if smoke:
+        from drjit.cuda.ad import TensorXf
+        density = TensorXf(smoke_density())
 
     def configure(value):
         a, s = settings["absorption"], settings["scattering"]
@@ -77,7 +87,9 @@ def _volume_setup(settings):
             a = value
         else:
             s = value
-        return psdr.VolumePathTracer(psdr.HomogeneousMedium(*bounds, a, s))
+        medium = (psdr.HeterogeneousMedium(*bounds, a, s, density) if smoke else
+                  psdr.HomogeneousMedium(*bounds, a, s))
+        return psdr.VolumePathTracer(medium)
 
     return sc, configure
 
@@ -140,7 +152,8 @@ def _surface_setup(settings, assets):
     if settings["method"] == "ad" and settings["derivative"] in ("x", "y"):
         sc.opts.sppe = spp
         sc.opts.sppse = spp
-    integrator = psdr.PathTracer(2) if settings["integrator"] == "path" else psdr.Direct(2)
+    integrator = {"path": psdr.PathTracer, "prb": psdr.PRBPathTracer,
+                  "direct": psdr.Direct}[settings["integrator"]](2)
 
     def configure(value):
         # BSDF evaluations read these uniforms directly. Only light and
@@ -215,7 +228,8 @@ def _render_arrays(settings, seed, scene, configure):
     if settings["method"] == "ad":
         parameter = Float(value)
         dr.enable_grad(parameter)
-        pixels = configure(parameter).renderD(scene, seed=seed)
+        replay_args = {"parameters": [parameter]} if settings["integrator"] == "prb" else {}
+        pixels = configure(parameter).renderD(scene, seed=seed, **replay_args)
         primal = rgb(pixels)
         dr.forward(parameter)
         gradient = rgb(dr.grad(pixels))

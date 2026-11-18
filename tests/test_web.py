@@ -27,7 +27,7 @@ GPU = pytest.mark.skipif(not dr.has_backend(dr.JitBackend.CUDA), reason="CUDA re
     {"x":float("nan")}, {"light":float("inf")}, {"seed":True}, {"seed":1.5}, {"seed":10**400},
     {"resolution":128.0}, {"roughness":0}, {"exposure":4}, {"file":"/tmp/scene"},
     {"npass":0}, {"npass":2.5}, {"npass":True}, {"npass":65537},
-    {"method":"unknown"}, {"fd_step":0}, {"fd_step":float("nan")}, {"fd_step":1}])
+    {"integrator":"prb", "derivative":"x"}, {"method":"unknown"}, {"fd_step":0}, {"fd_step":float("nan")}, {"fd_step":1}])
 def test_reject_invalid_settings(settings):
     with pytest.raises(ValueError):
         validate(settings)
@@ -84,7 +84,7 @@ def test_fd_backlit_absorber(absorption):
 
 
 @GPU
-@pytest.mark.parametrize("scene,integrator", [("cornell", "path"), ("bunny", "direct")])
+@pytest.mark.parametrize("scene,integrator", [("cornell", "path"), ("bunny", "direct"), ("cornell", "prb")])
 def test_fd_light_linearity(scene, integrator):
     settings = validate(dict(scene=scene, integrator=integrator, method="fd", derivative="light",
                              light=1.5, fd_step=.05, resolution=64, spp=4))
@@ -212,8 +212,8 @@ def test_http_render_pipeline():
         assert request("/api/jobs/0")[0] == 404
         assert request("/api/render", {"spp":100000})[0] == 400
         assert request("/api/render", {}, {"Content-Type":"application/json", "Origin":"https://example.com"})[0] == 403
-        for scene in ("cornell", "bunny", "volume", "fog_cube"):
-            parameter = "scattering" if scene in ("volume", "fog_cube") else "light"
+        for scene in ("cornell", "bunny", "volume", "fog_cube", "smoke"):
+            parameter = "scattering" if scene in web_render.VOLUME_SCENES else "light"
             status, body = request("/api/render", dict(scene=scene, resolution=64, spp=4, derivative=parameter))
             assert status == 202
             identifier = json.loads(body)["id"]

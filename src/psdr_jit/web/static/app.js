@@ -5,7 +5,7 @@ const error = document.querySelector("#error");
 const renderButton = document.querySelector("#render");
 const stopButton = document.querySelector("#stop");
 const labels = {x:"X", y:"Y", roughness:"roughness", albedo:"albedo", light:"light", absorption:"σₐ", scattering:"σₛ"};
-const sceneLabels = {cornell:"Cornell", bunny:"Bunny", volume:"Backlit fog", fog_cube:"Homogeneous fog cube"};
+const sceneLabels = {cornell:"Cornell", bunny:"Bunny", volume:"Backlit fog", fog_cube:"Homogeneous fog cube", smoke:"Smoke plume"};
 let defaults, busy = false, snapshot = null, activeId = null, stopped = false;
 
 function settings() {
@@ -17,14 +17,19 @@ function updateControls() {
   const finiteDifference = form.elements.method.value === "fd";
   document.querySelector("#fd-step-control").hidden = !finiteDifference;
   form.elements.fd_step.disabled = !finiteDifference;
-  const volume = ["volume", "fog_cube"].includes(form.elements.scene.value);
+  const volume = ["volume", "fog_cube", "smoke"].includes(form.elements.scene.value);
   document.querySelector("#object-controls").hidden = volume;
   document.querySelector("#medium-controls").hidden = !volume;
   for (const select of [form.elements.integrator, form.elements.derivative]) {
     for (const option of select.options) {
-      option.hidden = option.disabled = ["volume", "absorption", "scattering"].includes(option.value) !== volume;
+      const position = ["x", "y"].includes(option.value);
+      option.hidden = option.disabled = ["volume", "absorption", "scattering"].includes(option.value) !== volume
+        || (form.elements.integrator.value === "prb" && position);
     }
-    if (select.selectedOptions[0]?.disabled) select.value = [...select.options].find(o => !o.disabled).value;
+    if (select.selectedOptions[0]?.disabled) {
+      select.value = select.name === "derivative" && form.elements.integrator.value === "prb"
+        ? "albedo" : [...select.options].find(o => !o.disabled).value;
+    }
   }
   for (const input of form.querySelectorAll("input[type=range]")) {
     form.querySelector(`output[for=${input.id}]`).textContent = Number(input.value).toFixed(2);

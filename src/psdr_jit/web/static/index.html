@@ -11,8 +11,8 @@
     <aside>
       <form id="controls">
         <fieldset><legend>SCENE</legend>
-          <label class="wide">Scene<select name="scene"><option value="cornell">Cornell box</option><option value="bunny">Bunny · environment</option><option value="volume">Backlit fog</option><option value="fog_cube">Homogeneous fog cube</option></select></label>
-          <label>Integrator<select name="integrator"><option value="path">Path (2)</option><option value="direct">Direct MIS</option><option value="volume">Volume PRB (3)</option></select></label>
+          <label class="wide">Scene<select name="scene"><option value="cornell">Cornell box</option><option value="bunny">Bunny · environment</option><option value="volume">Backlit fog</option><option value="fog_cube">Homogeneous fog cube</option><option value="smoke">Smoke plume</option></select></label>
+          <label>Integrator<select name="integrator"><option value="path">Path (2)</option><option value="prb">Surface PRB (2)</option><option value="direct">Direct MIS</option><option value="volume">Volume PRB (3)</option></select></label>
         </fieldset>
         <fieldset id="object-controls"><legend>OBJECT</legend>
           <label class="slider">Position X <output for="x"></output><input id="x" name="x" type="range" min="-1" max="1" step=".01" aria-label="Position X"></label>
