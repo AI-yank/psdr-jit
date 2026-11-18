@@ -12,7 +12,7 @@ import threading
 import time
 from urllib.parse import parse_qs, urlsplit
 
-from .render import DEFAULTS, encode_preview, find_assets, release_worker_scene, render_pass, validate
+from .render import DEFAULTS, WHITE_ROOM_DEFAULTS, encode_preview, find_assets, release_worker_scene, render_pass, validate
 
 
 class Jobs:
@@ -160,7 +160,7 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         path = url.path
         if path == "/api/config":
-            return self.respond(200, dict(defaults=DEFAULTS, active=self.jobs.active_job()))
+            return self.respond(200, dict(defaults=DEFAULTS, white_room=WHITE_ROOM_DEFAULTS, active=self.jobs.active_job()))
         if path.startswith("/api/jobs/"):
             try:
                 after = parse_qs(url.query).get("after", [None])[0]

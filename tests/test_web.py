@@ -56,6 +56,23 @@ def test_cubicl_gradient_and_legend():
 
 
 @GPU
+@pytest.mark.skipif(not (Path(ASSETS) / "living-room-2/scene_v3.xml").is_file(),
+                    reason="Optional White Room scene archive required")
+def test_white_room_density_comparison():
+    settings = validate(dict(scene="white_room", resolution=64, spp=8))
+    assert (settings["method"], settings["derivative"]) == ("compare", "density")
+    images = []
+    for density in (0., 1., 4.):
+        image, (prb, fd) = render_arrays(settings | {"density": density}, ASSETS)
+        assert image.shape == prb.shape == fd.shape == (36, 64, 3)
+        assert np.isfinite(image).all() and image.mean() > 0
+        assert np.linalg.norm(fd) > 0
+        assert np.linalg.norm(prb - fd) / np.linalg.norm(fd) < .002
+        images.append(image)
+    assert np.linalg.norm(images[0] - images[-1]) > 1.
+
+
+@GPU
 def test_fog_cube_visible_against_vacuum():
     settings = validate(dict(scene="fog_cube", resolution=64, spp=16, derivative="scattering"))
     image, gradient = render_arrays(settings, ASSETS)

@@ -8,6 +8,7 @@
 *.exe
 __pycache__
 build/
+tutorials/data/living-room-2/
 .venv/
 .pytest_cache/
 ext_win64/

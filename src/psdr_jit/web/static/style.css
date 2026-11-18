@@ -224,6 +224,15 @@ figcaption a {
   object-fit:contain;
   image-rendering:auto;
 }
+.views.room .viewport { aspect-ratio:16/9; }
+.views.compare { grid-template-columns:2fr 1fr; }
+.views.compare figure:first-child { grid-row:span 2; align-self:start; }
+#room-credit a { color:inherit; }
+footer { flex-wrap:wrap; }
+@media(max-width:1000px) {
+  .views.compare { grid-template-columns:1fr 1fr; }
+  .views.compare figure:first-child { grid-column:1/-1; grid-row:auto; }
+}
 .empty {
   font-size:50px;
   color:#303844;

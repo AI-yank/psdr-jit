@@ -11,7 +11,7 @@
     <aside>
       <form id="controls">
         <fieldset><legend>SCENE</legend>
-          <label class="wide">Scene<select name="scene"><option value="cornell">Cornell box</option><option value="bunny">Bunny · environment</option><option value="volume">Backlit fog</option><option value="fog_cube">Homogeneous fog cube</option><option value="smoke">Smoke plume</option></select></label>
+          <label class="wide">Scene<select name="scene"><option value="cornell">Cornell box</option><option value="bunny">Bunny · environment</option><option value="volume">Backlit fog</option><option value="fog_cube">Homogeneous fog cube</option><option value="smoke">Smoke plume</option><option value="white_room">White Room · plume</option></select></label>
           <label>Integrator<select name="integrator"><option value="path">Path (2)</option><option value="prb">Surface PRB (2)</option><option value="direct">Direct MIS</option><option value="volume">Volume PRB (3)</option></select></label>
         </fieldset>
         <fieldset id="object-controls"><legend>OBJECT</legend>
@@ -21,6 +21,7 @@
           <label class="slider">Albedo <output for="albedo"></output><input id="albedo" name="albedo" type="range" min=".05" max="1" step=".01" aria-label="Albedo"></label>
         </fieldset>
         <fieldset id="medium-controls" hidden><legend>MEDIUM</legend>
+          <label class="slider" id="density-control" hidden>Density scale <output for="density"></output><input id="density" name="density" type="range" min="0" max="4" step=".01" aria-label="Density scale"></label>
           <label class="slider">Absorption σₐ <output for="absorption"></output><input id="absorption" name="absorption" type="range" min="0" max="3" step=".01"></label>
           <label class="slider">Scattering σₛ <output for="scattering"></output><input id="scattering" name="scattering" type="range" min="0" max="3" step=".01"></label>
         </fieldset>
@@ -29,9 +30,9 @@
           <label class="slider">Exposure <output for="exposure"></output><input id="exposure" name="exposure" type="range" min="-3" max="3" step=".25" aria-label="Exposure"></label>
         </fieldset>
         <fieldset><legend>GRADIENT</legend>
-          <label>Method<select name="method"><option value="ad">Forward AD</option><option value="fd">Finite difference</option></select></label>
+          <label>Method<select name="method"><option value="ad">Forward AD</option><option value="fd">Finite difference</option><option value="compare">PRB + FD</option></select></label>
           <label id="fd-step-control" hidden>Step h<input name="fd_step" type="number" min=".0001" max=".25" step="any" required disabled></label>
-          <label>∂L / ∂<select name="derivative" aria-label="Derivative parameter"><option value="x">Position X</option><option value="y">Position Y</option><option value="roughness">Roughness</option><option value="albedo">Albedo</option><option value="light">Light gain</option><option value="absorption">Absorption σₐ</option><option value="scattering">Scattering σₛ</option></select></label>
+          <label>∂L / ∂<select name="derivative" aria-label="Derivative parameter"><option value="x">Position X</option><option value="y">Position Y</option><option value="roughness">Roughness</option><option value="albedo">Albedo</option><option value="light">Light gain</option><option value="absorption">Absorption σₐ</option><option value="scattering">Scattering σₛ</option><option value="density">Density scale</option></select></label>
           <div class="hint">Signed mean RGB · linear radiance</div>
         </fieldset>
         <fieldset><legend>SAMPLING</legend>
@@ -48,8 +49,9 @@
       <div class="views">
         <figure><figcaption><span>RENDER</span><span class="view-detail">sRGB</span><a id="save-render" title="Save render PNG" aria-label="Save render PNG" download="render.png" hidden>↓</a></figcaption><div class="viewport"><img id="render-image" alt="Rendered scene" hidden><div class="empty">◈</div></div></figure>
         <figure><figcaption><span id="gradient-title">∂L / ∂X</span><span id="gradient-method" class="view-detail">FORWARD AD</span><a id="save-gradient" title="Save gradient PNG" aria-label="Save gradient PNG" download="gradient.png" hidden>↓</a></figcaption><div class="viewport"><img id="gradient-image" alt="Signed image gradient" hidden><div class="empty">∂</div></div><div class="scale"><span id="negative">−</span><div class="ramp"><img id="colorbar" alt="CubicL signed gradient scale" hidden><span>0</span></div><span id="positive">+</span><span class="scale-note">99% scale</span></div></figure>
+        <figure id="fd-view" hidden><figcaption><span>FINITE DIFFERENCE</span><span id="fd-label" class="view-detail"></span><a id="save-fd" title="Save FD gradient PNG" aria-label="Save FD gradient PNG" download>↓</a></figcaption><div class="viewport"><img id="fd-image" alt="Finite difference gradient"></div><div id="agreement" class="scale"></div></figure>
       </div>
-      <footer><span id="snapshot">—</span><span id="timing">—</span></footer>
+      <footer><span id="snapshot">—</span><span id="room-credit" hidden>White Room · Jay-Artist · <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">CC BY 3.0</a></span><span id="timing">—</span></footer>
     </section>
   </main>
 </body>

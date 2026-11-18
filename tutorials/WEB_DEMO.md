@@ -42,6 +42,20 @@ core, curling stem, and two colored lights. The medium uses a 28 × 40 × 32
 density grid (z, y, x). The sliders scale local absorption and scattering
 throughout the grid. Open `/?scene=smoke` to start on this scene.
 
+Open `/?scene=white_room` for **White Room · plume**. Adjust **Density scale**
+and press **Render**. Zero removes the plume and one reproduces the validation
+scene. **PRB + FD** renders both density gradients from the same samples at each
+pass. Both views use one CubicL scale. Relative L2 and RMSE compare the
+accumulated linear RGB gradients before color mapping. **Step h** controls the
+finite-difference perturbation.
+
+The room uses the published camera, lights and meshes with diffuse materials
+and a four-bounce heterogeneous medium. Extract the optional Mitsuba archive
+into `tutorials/data` (or your `--assets` directory) so that
+`living-room-2/scene_v3.xml`, `models` and `textures` are together in the
+`living-room-2` folder. The scene is *The White Room* by Jay-Artist, distributed
+by Benedikt Bitterli. [Mitsuba scene archive](https://benedikt-bitterli.me/resources/mitsuba/living-room-2.zip) · [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)
+
 The right panel shows the **signed mean RGB derivative of linear radiance**.
 Under **Gradient → Method**, select **Forward AD** or **Finite difference**.
 Finite difference keeps the left image at the selected value and varies only
